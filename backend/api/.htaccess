@@ -1,0 +1,11 @@
+RewriteEngine On
+
+# Shared hosting (Apache/LiteSpeed via CGI/FPM) often drops the Authorization
+# header; pass it through so the Bearer login token reaches PHP.
+<IfModule mod_setenvif.c>
+  SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+</IfModule>
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]

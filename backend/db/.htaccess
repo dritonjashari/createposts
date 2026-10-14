@@ -1,0 +1,9 @@
+# Internal files only — PHP reads them from disk; nothing here is meant to be
+# opened in a browser. Blocks e.g. a stray uploaded script from ever running.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>

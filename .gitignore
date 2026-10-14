@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Per-machine backend settings and secrets (see backend/config.local.example.php)
+backend/config.local.php
+
+# Runtime data written by the app: uploaded media, job images, Publer cache
+backend/uploads/*
+!backend/uploads/.htaccess
+backend/lib/uploads/
+
+# Local Claude Code settings
+**/.claude/settings.local.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+*.log

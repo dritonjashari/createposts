@@ -1,0 +1,12 @@
+# Only the JSON API (api/) and the two background workers are meant to be
+# reached over HTTP. Config, the shared bootstrap and docs are read by PHP
+# from disk, never opened in a browser.
+<FilesMatch "^(config.*|functions)\.php$|\.(sql|md|txt|json|log)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>

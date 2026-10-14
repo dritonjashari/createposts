@@ -1,0 +1,25 @@
+# CreatePosts: this repository folder is the web root (public_html, a
+# subdomain's folder, or a subfolder such as public_html/createposts).
+#   backend/...                  the PHP API and workers (own .htaccess files)
+#   assets/..., favicon.svg, ... built frontend files, from frontend/dist
+#   anything else                the React app (index.php)
+# Nothing else in the repository (.git, sources, READMEs, ...) is reachable:
+# it all falls through to the app.
+
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Already routed below (this runs again after each internal rewrite).
+  RewriteRule ^(frontend/dist/|index\.php$) - [L]
+
+  # The backend, and cPanel's own folders (SSL certificate checks), as-is.
+  RewriteRule ^(backend|\.well-known|cgi-bin)(/|$) - [L]
+
+  # Built frontend files: assets/* and the top-level files from frontend/public.
+  RewriteRule ^(assets/.+|[^/]+\.[A-Za-z0-9]+)$ frontend/dist/$1 [L]
+
+  # Every other path is a client-side route (/dashboard, /tasks/12, ...).
+  RewriteRule ^ index.php [L]
+</IfModule>
