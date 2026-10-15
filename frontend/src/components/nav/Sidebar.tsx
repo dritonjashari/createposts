@@ -3,8 +3,8 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { getPublerContext } from '../../api/publer';
-import { switchWorkspace } from '../../api/mapping';
+import { ApiError } from '../../api/client';
+import { getWorkspaces, switchWorkspace } from '../../api/mapping';
 import { getNotifications, markAllNotificationsRead, markNotificationRead } from '../../api/notifications';
 import Icon, { type IconName } from '../ui/Icon';
 import { timeAgo } from '../../lib/datetime';
@@ -94,15 +94,44 @@ function WorkspaceSwitcher() {
   const queryClient = useQueryClient();
   const ref = useRef<HTMLDetailsElement>(null);
   useDismissDetails(ref);
-  const { data } = useQuery({ queryKey: ['publer-context'], queryFn: getPublerContext, staleTime: 60000 });
+  // Its own light query (not the Schedule page's publer-context), re-checked
+  // every minute, so access an admin grants or removes shows up without a reload.
+  const { data } = useQuery({ queryKey: ['workspaces'], queryFn: getWorkspaces, staleTime: 15000, refetchInterval: 60000 });
+  const [error, setError] = useState<string | null>(null);
+
+  // When the active workspace changes (switched here or on the System page,
+  // in another tab, or because access to it was removed), everything on
+  // screen belongs to the old one: refetch it all.
+  const activeId = data?.active_workspace_id;
+  const seenActiveId = useRef(activeId);
+  useEffect(() => {
+    if (activeId === undefined) return;
+    if (seenActiveId.current !== undefined && seenActiveId.current !== activeId) {
+      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'workspaces' });
+    }
+    seenActiveId.current = activeId;
+  }, [activeId, queryClient]);
+
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
 
   const switchMutation = useMutation({
     mutationFn: (workspaceId: string) => switchWorkspace(workspaceId),
-    onSuccess: () => queryClient.invalidateQueries(),
+    onMutate: () => setError(null),
+    onSuccess: (res) => queryClient.setQueryData(['workspaces'], res),
+    onError: (err) => {
+      setError(err instanceof ApiError ? err.message : 'Could not switch workspace. Please try again.');
+      // The list was out of date (e.g. access was just removed): show the real one.
+      void queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+    },
   });
 
+  const errorLine = error ? <p className="ws-error" role="alert">{error}</p> : null;
   if (!data || data.workspaces.length === 0) {
-    return null;
+    return errorLine;
   }
   const activeName = data.workspaces.find((w) => w.id === data.active_workspace_id)?.name ?? 'Workspace';
   const label = (
@@ -116,39 +145,47 @@ function WorkspaceSwitcher() {
   );
 
   if (data.workspaces.length === 1) {
-    return <div className="workspace-card">{label}</div>;
+    return (
+      <div>
+        <div className="workspace-card">{label}</div>
+        {errorLine}
+      </div>
+    );
   }
 
   return (
-    <details ref={ref} className="popover-wrap workspace-switch">
-      <summary className="workspace-card is-button">
-        {label}
-        <Icon name="chevronDown" size={16} className="ws-chevron" />
-      </summary>
-      <div className="popover workspace-switch-menu" role="listbox" aria-label="Switch workspace">
-        {data.workspaces.map((ws) => {
-          const active = ws.id === data.active_workspace_id;
-          return (
-            <button
-              key={ws.id}
-              type="button"
-              role="option"
-              aria-selected={active}
-              className={`menu-item${active ? ' is-active' : ''}`}
-              disabled={switchMutation.isPending}
-              onClick={() => {
-                ref.current?.removeAttribute('open');
-                if (!active) switchMutation.mutate(ws.id);
-              }}
-            >
-              <span className="ws-avatar ws-avatar-sm">{ws.name.charAt(0).toUpperCase()}</span>
-              <span className="menu-item-label">{ws.name}</span>
-              {active && <Icon name="check" size={16} className="menu-item-check" />}
-            </button>
-          );
-        })}
-      </div>
-    </details>
+    <div>
+      <details ref={ref} className="popover-wrap workspace-switch">
+        <summary className="workspace-card is-button">
+          {label}
+          <Icon name="chevronDown" size={16} className="ws-chevron" />
+        </summary>
+        <div className="popover workspace-switch-menu" role="listbox" aria-label="Switch workspace">
+          {data.workspaces.map((ws) => {
+            const active = ws.id === data.active_workspace_id;
+            return (
+              <button
+                key={ws.id}
+                type="button"
+                role="option"
+                aria-selected={active}
+                className={`menu-item${active ? ' is-active' : ''}`}
+                disabled={switchMutation.isPending}
+                onClick={() => {
+                  ref.current?.removeAttribute('open');
+                  if (!active) switchMutation.mutate(ws.id);
+                }}
+              >
+                <span className="ws-avatar ws-avatar-sm">{ws.name.charAt(0).toUpperCase()}</span>
+                <span className="menu-item-label">{ws.name}</span>
+                {active && <Icon name="check" size={16} className="menu-item-check" />}
+              </button>
+            );
+          })}
+        </div>
+      </details>
+      {errorLine}
+    </div>
   );
 }
 

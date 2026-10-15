@@ -22,6 +22,7 @@ export default function PublerKeyCard({ data, onSaved, onError }: Props) {
     onSuccess: (res) => {
       onSaved(res.message);
       queryClient.invalidateQueries({ queryKey: ['system'] });
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] }); // a new key can mean other workspaces
     },
     onError,
   });

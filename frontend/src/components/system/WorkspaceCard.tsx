@@ -20,9 +20,9 @@ export default function WorkspaceCard({ data, onSaved, onError }: Props) {
     mutationFn: () => saveActiveWorkspace(activeWorkspace),
     onSuccess: (res) => {
       onSaved(res.message);
-      queryClient.invalidateQueries({ queryKey: ['system'] });
-      queryClient.invalidateQueries({ queryKey: ['publer-context'] });
-      queryClient.invalidateQueries({ queryKey: ['mapping'] });
+      // The sidebar switcher refetches everything else once it sees the new
+      // active workspace (this page's data included).
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] });
     },
     onError,
   });

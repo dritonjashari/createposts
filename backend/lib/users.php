@@ -35,11 +35,14 @@ function getPendingUsers(): array
 }
 
 
-/** Approve a pending account so it can log in. */
-function approveUserAccount(int $userId): array
+/**
+ * Approve a pending account so it can log in. It joins the approving admin's
+ * team, like an account that admin created (adminCreateUser()).
+ */
+function approveUserAccount(int $userId, ?int $approvedBy = null): array
 {
-    $stmt = getDb()->prepare("UPDATE users SET status = 'active' WHERE id = :id AND status = 'pending'");
-    $stmt->execute(['id' => $userId]);
+    $stmt = getDb()->prepare("UPDATE users SET status = 'active', created_by = COALESCE(NULLIF(created_by, 0), :by) WHERE id = :id AND status = 'pending'");
+    $stmt->execute(['id' => $userId, 'by' => $approvedBy]);
     if ($stmt->rowCount() === 0) {
         return ['success' => false, 'message' => 'User not found or already approved.'];
     }
@@ -108,7 +111,12 @@ function setUserRole(int $userId, string $role, ?int $actingAdminId = null): arr
             $db->prepare("UPDATE users SET role = 'editor', created_by = :c WHERE id = :id")
                 ->execute(['c' => $newOwner, 'id' => $userId]);
         } else {
-            $db->prepare("UPDATE users SET role = 'admin' WHERE id = :id")->execute(['id' => $userId]);
+            // A promoted editor stays in the team they worked in. Without a
+            // creator (a self-registered account), they would become the admin
+            // of a team of their own, with no sites, Publer key or workspaces.
+            $team = getSiteOwnerId($userId);
+            $db->prepare("UPDATE users SET role = 'admin', created_by = COALESCE(NULLIF(created_by, 0), :c) WHERE id = :id")
+                ->execute(['c' => $team !== $userId ? $team : null, 'id' => $userId]);
         }
         $db->commit();
     } catch (\Throwable $e) {
@@ -117,6 +125,10 @@ function setUserRole(int $userId, string $role, ?int $actingAdminId = null): arr
         }
         throw $e;
     }
+
+    // Admins always have every workspace, and a demoted admin starts at "All
+    // workspaces" like any new editor, never with a list left over from before.
+    deleteSetting($userId, 'publer_workspaces');
 
     return ['success' => true, 'message' => $role === 'admin'
         ? 'Role updated — user is now an admin.'

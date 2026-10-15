@@ -32,6 +32,7 @@ $routes = [
     'POST auth/register'  => 'auth_registerAction',
     'POST auth/logout'    => 'auth_logoutAction',
 
+    'GET  workspace'      => 'workspace_getAction',
     'POST workspace'      => 'workspace_switchAction',
 
     'GET    sites'        => 'sites_listAction',

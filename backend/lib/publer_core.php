@@ -17,9 +17,13 @@ function publerHttpGet(string $endpoint, string $workspaceId, string $apiKey)
 
 /**
  * The workspace ids a user is allowed to use:
- *  - their own assigned list ('publer_workspaces'), if explicitly restricted,
- *  - else the admin who created them (editors inherit their restriction),
- *  - else every workspace the key can see (unrestricted).
+ *  - admins: every workspace the team's Publer key can see. Admins manage the
+ *    key and everyone's access, so a list on an admin only ever locked them
+ *    out of their own workspaces, including ones they had just created.
+ *  - editors: the list an admin gave them on the Users page
+ *    ('publer_workspaces'), else every workspace. (Editors without a list
+ *    used to inherit their admin's, while the Users page showed them as
+ *    having all workspaces.)
  *
  * Note: the user's *currently active* workspace ('publer_workspace_id') must
  * NOT be used as a stand-in allow-list here — it's just a preference, and
@@ -28,36 +32,17 @@ function publerHttpGet(string $endpoint, string $workspaceId, string $apiKey)
  */
 function getAllowedWorkspaceIds(int $userId): array
 {
-    $decode = static function (string $json): array {
-        $a = json_decode($json, true);
-        return is_array($a) ? array_values(array_filter(array_map('strval', $a), static fn ($v) => $v !== '')) : [];
-    };
-
-    // getSetting() returns null only when the row doesn't exist at all — that's
-    // the "never configured" case. A stored value of '[]' means an admin
-    // explicitly unchecked every workspace for this user (revoking access),
-    // which must NOT be treated the same as "not configured" and fall back to
-    // an unrestricted list — that was the bug: an editor with zero workspaces
-    // selected ended up with access to everything.
-    $own = getSetting($userId, 'publer_workspaces', null);
+    // getSetting() returns null only when the row doesn't exist at all — the
+    // "never restricted" case. A stored '[]' means an admin unchecked every
+    // workspace for this editor (revoking access), which must NOT fall back
+    // to the unrestricted list.
+    $own = userIsAdmin($userId) ? null : getSetting($userId, 'publer_workspaces', null);
     if ($own !== null) {
-        return array_values(array_unique($decode($own)));
+        $ids = json_decode($own, true);
+        return is_array($ids) ? array_values(array_unique(array_filter(array_map('strval', $ids), static fn ($v) => $v !== ''))) : [];
     }
 
-    $ownerId = getSiteOwnerId($userId);
-    if ($ownerId !== $userId) {
-        $ownerRaw = getSetting($ownerId, 'publer_workspaces', null);
-        if ($ownerRaw !== null) {
-            return array_values(array_unique($decode($ownerRaw)));
-        }
-    }
-
-    // Nobody has ever configured a restriction — unrestricted default.
-    $ids = [];
-    foreach (getPublerWorkspaces($userId) as $w) {
-        $ids[] = $w['id'];
-    }
-    return array_values(array_unique($ids));
+    return array_values(array_unique(array_column(getPublerWorkspaces($userId), 'id')));
 }
 
 
@@ -99,36 +84,50 @@ function fetchPublerWorkspaceId(int $userId): string
 }
 
 
-/** List Publer workspaces for a user's key: [ ['id'=>..,'name'=>..], ... ]. Cached in session (5 min). */
-function getPublerWorkspaces(int $userId): array
+/**
+ * List Publer workspaces for a user's key: [ ['id'=>..,'name'=>..], ... ].
+ *
+ * Cached for the whole team (keyed by API key) for up to $maxAge seconds, so
+ * a workspace added in Publer reaches everyone within a minute. There is
+ * deliberately no per-login copy on top: one kept a new workspace hidden from
+ * each user for several more minutes, even after they'd been given access.
+ */
+function getPublerWorkspaces(int $userId, int $maxAge = 60): array
 {
-    // The navbar switcher calls this on every page, so cache to avoid a Publer
-    // API round-trip per request. Cleared on API-key change (see system.php).
-    $cacheKey = 'publer_ws_list_' . $userId;
-    $cached   = $_SESSION[$cacheKey] ?? null;
-    if (is_array($cached) && isset($cached['t'], $cached['data']) && (time() - (int) $cached['t']) < 300) {
-        return $cached['data'];
+    // Asked for several times per request: [cache key => [max age of the list, list]].
+    static $memo = [];
+    $apiKey   = getPublerApiKey($userId);
+    $cacheKey = 'workspaces|' . md5($apiKey);
+    if (isset($memo[$cacheKey]) && $memo[$cacheKey][0] <= $maxAge) {
+        return $memo[$cacheKey][1];
+    }
+    $cached = publerCacheGet($cacheKey, $maxAge);
+    if (is_array($cached) && !empty($cached)) {
+        $memo[$cacheKey] = [$maxAge, $cached];
+        return $cached;
     }
 
-    $apiKey = getPublerApiKey($userId);
-    $shared = publerCacheGet('workspaces|' . md5($apiKey), 300);
-    if (is_array($shared) && !empty($shared)) {
-        $_SESSION[$cacheKey] = ['t' => time(), 'data' => $shared];
-        return $shared;
-    }
     $data = publerHttpGet('workspaces', '', $apiKey);
-    $out = [];
+    $out  = [];
     if (is_array($data)) {
         foreach ($data as $w) {
             if (!empty($w['id'])) {
                 $out[] = ['id' => (string) $w['id'], 'name' => (string) ($w['name'] ?? 'Workspace')];
             }
         }
+        if (!empty($out)) {
+            publerCacheSet($cacheKey, $out);
+        }
+    } elseif (!in_array((int) ($GLOBALS['publer_last_status'] ?? 0), [401, 403], true)) {
+        // Publer busy or unreachable (e.g. its rate limit): keep using the
+        // last list it returned rather than none, and ask again in a minute.
+        $stale = publerCacheGet($cacheKey, 86400 * 30);
+        if (is_array($stale) && !empty($stale)) {
+            $out = $stale;
+            publerCacheSet($cacheKey, $out);
+        }
     }
-    if (!empty($out)) { // don't cache a transient API failure
-        $_SESSION[$cacheKey] = ['t' => time(), 'data' => $out];
-        publerCacheSet('workspaces|' . md5($apiKey), $out);
-    }
+    $memo[$cacheKey] = [0, $out]; // just asked Publer: no point asking again this request
     return $out;
 }
 
@@ -258,8 +257,8 @@ function fetchPublerFacebookPages(int $userId, string $workspaceId = ''): array
     }
 
     // Called on nearly every Publer-related page load (publer.php, tasks.php,
-    // dashboards, system.php) just to show page names — cache it the same way
-    // getPublerWorkspaces() already is. Cleared on API-key change (system.php).
+    // dashboards, system.php) just to show page names — cache it in the
+    // session for 5 minutes. Cleared on API-key change (system.php).
     $cacheKey = 'publer_fb_pages_' . $userId . '_' . $ws;
     $cached   = $_SESSION[$cacheKey] ?? null;
     if (is_array($cached) && isset($cached['t'], $cached['data']) && (time() - (int) $cached['t']) < 300) {

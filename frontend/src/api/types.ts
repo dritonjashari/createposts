@@ -84,7 +84,7 @@ export interface AppUser {
   role: 'admin' | 'editor';
   status: 'active' | 'pending';
   created_at: string;
-  /** false = never restricted (all workspaces); true = only workspace_ids (may be none). */
+  /** false = never restricted (all workspaces; always for admins); true = only workspace_ids (may be none). */
   workspaces_restricted: boolean;
   workspace_ids: string[];
 }

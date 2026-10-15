@@ -83,8 +83,14 @@ export default function UsersPage() {
     workspacesMutation.mutate({ id: u.id, workspaces: u.workspaces_restricted ? null : allIds });
   }
 
+  // Only workspaces that still exist in Publer: ids of deleted ones (or from a
+  // previous API key) would otherwise linger in the saved list for good.
+  function grantedIds(u: AppUser): string[] {
+    return u.workspace_ids.filter((id) => data?.workspaces.some((w) => w.id === id));
+  }
+
   function toggleWorkspace(u: AppUser, wsId: string) {
-    const current = u.workspace_ids;
+    const current = grantedIds(u);
     const next = current.includes(wsId) ? current.filter((id) => id !== wsId) : [...current, wsId];
     if (next.length === 0 && !confirm(`Remove all workspace access for ${u.name}? They will not be able to schedule posts.`)) {
       return;
@@ -198,6 +204,7 @@ export default function UsersPage() {
               <tbody>
                 {data.users.map((u) => {
                   const isSelf = u.id === data.self_id;
+                  const granted = grantedIds(u);
                   return (
                     <tr key={u.id}>
                       <td>{u.name}</td>
@@ -209,34 +216,41 @@ export default function UsersPage() {
                         )}
                       </td>
                       <td>
-                        {data.workspaces.length === 0 ? (
+                        {u.role === 'admin' ? (
+                          <>
+                            <span className="small-text">All workspaces</span>
+                            <div className="field-hint">Admins always have every workspace.</div>
+                          </>
+                        ) : data.workspaces.length === 0 ? (
                           <span className="small-text">—</span>
                         ) : (
-                          <div className="ws-checks">
-                            <label className="ws-check">
-                              <input
-                                type="checkbox"
-                                checked={!u.workspaces_restricted}
-                                disabled={workspacesMutation.isPending}
-                                onChange={() => toggleAllWorkspaces(u, data.workspaces.map((w) => w.id))}
-                              />
-                              <strong>All workspaces</strong>
-                            </label>
-                            {data.workspaces.map((ws) => (
-                              <label className="ws-check" key={ws.id}>
+                          <>
+                            <div className="ws-checks">
+                              <label className="ws-check">
                                 <input
                                   type="checkbox"
-                                  checked={!u.workspaces_restricted || u.workspace_ids.includes(ws.id)}
-                                  disabled={!u.workspaces_restricted || workspacesMutation.isPending}
-                                  onChange={() => toggleWorkspace(u, ws.id)}
+                                  checked={!u.workspaces_restricted}
+                                  disabled={workspacesMutation.isPending}
+                                  onChange={() => toggleAllWorkspaces(u, data.workspaces.map((w) => w.id))}
                                 />
-                                {ws.name}
+                                <strong>All workspaces</strong>
                               </label>
-                            ))}
-                          </div>
-                        )}
-                        {u.workspaces_restricted && u.workspace_ids.length === 0 && (
-                          <div className="field-hint">No workspace access</div>
+                              {data.workspaces.map((ws) => (
+                                <label className="ws-check" key={ws.id}>
+                                  <input
+                                    type="checkbox"
+                                    checked={!u.workspaces_restricted || granted.includes(ws.id)}
+                                    disabled={!u.workspaces_restricted || workspacesMutation.isPending}
+                                    onChange={() => toggleWorkspace(u, ws.id)}
+                                  />
+                                  {ws.name}
+                                </label>
+                              ))}
+                            </div>
+                            {u.workspaces_restricted && granted.length === 0 && (
+                              <div className="field-hint">No workspace access</div>
+                            )}
+                          </>
                         )}
                       </td>
                       <td>

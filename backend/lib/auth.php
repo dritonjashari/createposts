@@ -68,6 +68,15 @@ function isAdmin(): bool
 }
 
 
+/** Whether any user (not just the logged-in one) is an admin, read live from the DB. */
+function userIsAdmin(int $userId): bool
+{
+    $stmt = getDb()->prepare('SELECT role FROM users WHERE id = :id');
+    $stmt->execute(['id' => $userId]);
+    return $stmt->fetchColumn() === 'admin';
+}
+
+
 /** Landing page for the current user's role. */
 function homePage(): string
 {

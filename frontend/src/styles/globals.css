@@ -267,6 +267,7 @@ small { font-size: 0.8rem; color: var(--text-faint); }
 .ws-name { font-weight: 600; font-size: 0.86rem; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-chevron { color: var(--side-muted); flex-shrink: 0; transition: transform 0.15s; }
 details[open] > summary .ws-chevron { transform: rotate(180deg); }
+.ws-error { margin: 6px 2px 0; font-size: 0.76rem; line-height: 1.4; color: #f97066; }
 
 /* Navigation */
 .sidebar-nav { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; margin: 0 -4px; padding: 0 4px; scrollbar-width: thin; scrollbar-color: #2a3346 transparent; }

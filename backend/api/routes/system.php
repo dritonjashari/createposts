@@ -8,7 +8,8 @@ function system_getAction(): void
     // admin of the team); only the active workspace is each admin's own pick.
     $selfId     = currentUserId();
     $userId     = getSiteOwnerId($selfId);
-    $workspaces = getPublerWorkspaces($selfId);
+    // Nearly fresh: a workspace just created in Publer should be here to set up.
+    $workspaces = getPublerWorkspaces($selfId, 10);
 
     $activeWorkspace = fetchPublerWorkspaceId($selfId);
 
@@ -159,9 +160,10 @@ function system_saveSchedulingAction(): void
 function system_saveWorkspaceAction(): void
 {
     requireAdminApi();
-    $userId = currentUserId();
-    $body   = jsonBody();
-    setSetting($userId, 'publer_workspace_id', trim((string) ($body['workspace_id'] ?? '')));
+    $body = jsonBody();
+    if (!setActiveWorkspaceId(currentUserId(), trim((string) ($body['workspace_id'] ?? '')))) {
+        jsonError(422, 'That workspace is no longer in your Publer account. Reload the page and try again.');
+    }
     jsonResponse(['message' => 'Active Publer workspace updated.']);
 }
 
@@ -210,7 +212,6 @@ function system_savePublerKeyAction(): void
     $stmt->execute(['key' => $publerKey !== '' ? $publerKey : null, 'id' => $userId]);
     foreach (array_unique([$selfId, $userId]) as $id) {
         unset($_SESSION['publer_ws_first_' . $id]); // force workspace re-resolution with the new key
-        unset($_SESSION['publer_ws_list_' . $id]);  // drop cached workspace list (new key may differ)
         foreach (array_keys($_SESSION) as $k) { // drop cached Facebook pages (any workspace) — new key may differ
             if (str_starts_with($k, 'publer_fb_pages_' . $id . '_')) {
                 unset($_SESSION[$k]);

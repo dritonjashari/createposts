@@ -8,8 +8,9 @@ function users_listAction(): void
 
     $users = getAllUsers();
     foreach ($users as &$u) {
-        // null = never restricted (all workspaces); [] = explicitly none.
-        $raw   = getSetting((int) $u['id'], 'publer_workspaces', null);
+        // Admins always have every workspace (see getAllowedWorkspaceIds()).
+        // For editors, null = never restricted (all workspaces); [] = explicitly none.
+        $raw   = $u['role'] === 'admin' ? null : getSetting((int) $u['id'], 'publer_workspaces', null);
         $ownWs = $raw === null ? null : json_decode($raw, true);
         $u['workspaces_restricted'] = $raw !== null;
         $u['workspace_ids'] = is_array($ownWs) ? array_values(array_map('strval', $ownWs)) : [];
@@ -18,7 +19,9 @@ function users_listAction(): void
 
     jsonResponse([
         'users'      => $users,
-        'workspaces' => getPublerWorkspaces($selfId),
+        // Nearly fresh: admins come here right after creating a workspace in
+        // Publer, to give people access to it.
+        'workspaces' => getPublerWorkspaces($selfId, 10),
         'self_id'    => $selfId,
     ]);
 }
@@ -43,7 +46,7 @@ function users_createAction(): void
 function users_approveAction(string $id): void
 {
     requireAdminApi();
-    $result = approveUserAccount((int) $id);
+    $result = approveUserAccount((int) $id, currentUserId());
     if (!$result['success']) {
         jsonError(422, $result['message']);
     }
@@ -89,6 +92,9 @@ function users_setWorkspacesAction(string $id): void
     $targetId = (int) $id;
     if (!userExists($targetId)) {
         jsonError(404, 'User not found.');
+    }
+    if (userIsAdmin($targetId)) {
+        jsonError(422, 'Admins always have access to every workspace.');
     }
     $body = jsonBody();
 

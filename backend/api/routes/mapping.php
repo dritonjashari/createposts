@@ -1,7 +1,23 @@
 <?php
-// Facebook-page <-> WordPress-site mapping, plus the shared "switch active
-// workspace" action used by the navbar switcher on every page (mirrors
-// switch_workspace.php, but returns JSON instead of a redirect).
+// Facebook-page <-> WordPress-site mapping, plus the sidebar's workspace
+// switcher (shown on every page): its list and the "switch active workspace"
+// action.
+
+/** The workspaces a user may switch between, and the active one. */
+function workspace_state(int $userId): array
+{
+    return [
+        'workspaces'          => getAllowedWorkspaces($userId),
+        'active_workspace_id' => getActiveWorkspaceId($userId),
+    ];
+}
+
+/** Kept cheap (no Facebook pages or queue reads), since the sidebar re-checks it every minute. */
+function workspace_getAction(): void
+{
+    requireLoginApi();
+    jsonResponse(workspace_state(currentUserId()));
+}
 
 function workspace_switchAction(): void
 {
@@ -9,10 +25,11 @@ function workspace_switchAction(): void
     $userId = currentUserId();
     $body   = jsonBody();
     $ws     = (string) ($body['workspace_id'] ?? $body['ws'] ?? '');
-    if ($ws !== '') {
-        setActiveWorkspaceId($userId, $ws); // ignores workspaces the user isn't allowed to use
+    if (!setActiveWorkspaceId($userId, $ws)) {
+        // Typically an admin removed it since the switcher's list was loaded.
+        jsonError(422, "You don't have access to that workspace.");
     }
-    jsonResponse(['active_workspace_id' => getActiveWorkspaceId($userId)]);
+    jsonResponse(workspace_state($userId));
 }
 
 function mapping_getAction(): void
