@@ -1,30 +1,33 @@
 
-# CreatePosts - React SPA + PHP Backend
-# Compatible with Namecheap shared hosting (Apache)
+# CreatePosts - Vite React SPA
+# Namecheap Shared Hosting
+# This file is copied to frontend/dist/.htaccess
 
 Options -Indexes
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
-    # 1. Allow PHP backend and cPanel system paths
-    RewriteRule ^(backend|\.well-known|cgi-bin)(/|$) - [L]
+    # Allow existing files and directories
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
 
-    # 2. Prevent rewriting files already inside the React build
-    RewriteRule ^frontend/dist/ - [L]
+    # React Router fallback
+    # Prevent 404 errors when refreshing React pages
+    RewriteRule ^ index.html [L]
+</IfModule>
 
-    # 3. Serve React build assets (JS, CSS, images, fonts)
-    RewriteCond %{DOCUMENT_ROOT}/frontend/dist/$1 -f
-    RewriteRule ^(assets/.+|[^/]+\.[A-Za-z0-9]+)$ frontend/dist/$1 [L]
+<IfModule mod_headers.c>
 
-    # 4. Serve the React entry point
-    RewriteRule ^$ frontend/dist/index.html [L]
+    # Cache hashed JavaScript and CSS assets
+    <FilesMatch "-[0-9A-Za-z_-]{8,}\.(js|css)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
 
-    # 5. React Router fallback
-    # Fixes 404 errors on refresh for:
-    # /dashboard
-    # /settings
-    # /tasks/12
-    # /any/react/route
-    RewriteRule ^ frontend/dist/index.html [L]
+    # Never cache React entry point
+    <Files "index.html">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+    </Files>
+
 </IfModule>
