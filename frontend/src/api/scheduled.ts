@@ -54,7 +54,9 @@ export function getScheduledPosts(filters: ScheduledPostsFilters = {}) {
   if (search) params.set('q', search);
   if (dateFrom) params.set('date_from', dateFrom);
   if (dateTo) params.set('date_to', dateTo);
-  return apiRequest<ScheduledPostsResponse>(`scheduled-posts?${params}`);
+  // A stuck Publer read must end in an error the page can show (with Refresh
+  // usable again), not an endless "Refreshing…".
+  return apiRequest<ScheduledPostsResponse>(`scheduled-posts?${params}`, { timeoutMs: 60_000 });
 }
 
 export function deleteScheduledPost(id: string, scheduledAt: string) {

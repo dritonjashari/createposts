@@ -251,6 +251,10 @@ export default function ScheduledPostsPage() {
     queryKey: ['scheduled-posts', state, page, filterPageId, search, dateFrom, dateTo],
     queryFn: () => getScheduledPosts({ state, page, accountId: filterPageId, search, dateFrom, dateTo }),
     staleTime: 0,
+    // Show a failed or timed-out Publer read right away (Refresh tries again):
+    // automatic retries only repeated the wait and spent more of the team's
+    // Publer limit.
+    retry: false,
   });
 
   const hasActiveFilters = filterPageId !== '' || search !== '' || dateFrom !== '' || dateTo !== '';

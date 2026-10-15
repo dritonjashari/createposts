@@ -68,7 +68,7 @@ function scheduled_listAction(): void
     $workspaceId = fetchPublerWorkspaceId($userId);
     $apiKey      = getPublerApiKey($userId);
     $page        = max(1, (int) ($_GET['page'] ?? 1));
-    $perPage     = 20;
+    $perPage     = 15; // Publer's own page size, so a page here is one page from Publer
     $state       = ($_GET['state'] ?? '') === 'published' ? 'published' : 'scheduled';
     $filterPage  = trim($_GET['account_id'] ?? '');
     $search      = trim($_GET['q'] ?? '');
@@ -80,14 +80,17 @@ function scheduled_listAction(): void
         return;
     }
 
-    // Published history can run into thousands of posts (newest first), so
-    // it's paged straight through Publer — one request per page — instead
-    // of collected in full like the (much shorter) scheduled queue below.
+    // Both lists are paged straight through Publer — one request per page.
+    // Published history runs into thousands of posts (newest first), and the
+    // scheduled queue into hundreds (Publer returns it soonest first, the
+    // order shown here): collecting the whole queue before showing its first
+    // page took ~30 requests per load, kept the page "Refreshing…" for many
+    // seconds or minutes, and spent a third of the team's Publer limit.
     // With a date range Publer ignores `page` (see the quirk noted below) and
     // returns the whole matching range at once, so that case falls through
     // to the collect-and-slice path instead.
-    if ($state === 'published' && $dateFrom === '' && $dateTo === '') {
-        $query = ['state' => 'published', 'page' => $page - 1];
+    if ($dateFrom === '' && $dateTo === '') {
+        $query = ['state' => $state, 'page' => $page - 1];
         if ($filterPage !== '') {
             $query['account_ids'] = [$filterPage];
         }
@@ -96,7 +99,7 @@ function scheduled_listAction(): void
         }
         // Short shared cache: the whole team shares Publer's 100-requests-per-
         // 2-minutes limit; any change in the workspace invalidates it.
-        $cacheKey = 'published|' . $workspaceId . '|' . publerCacheGen($workspaceId) . '|' . md5(json_encode($query));
+        $cacheKey = 'posts|' . $workspaceId . '|' . publerCacheGen($workspaceId) . '|' . md5(json_encode($query));
         $data     = publerCacheGet($cacheKey, 45);
         if ($data === null) {
             $data = publerHttpGet('posts?' . _scheduled_buildQuery($query), $workspaceId, $apiKey);
@@ -114,18 +117,23 @@ function scheduled_listAction(): void
                 $posts[] = _scheduled_formatPost($p, $fbPages);
             }
         }
+        // Publer's total for the scheduled queue is exact, so it gets page
+        // numbers; published history stays open-ended (next until empty).
+        $total     = (int) ($data['total'] ?? count($posts));
+        $scheduled = $state === 'scheduled';
         jsonResponse([
             'posts'       => $posts,
-            'total'       => (int) ($data['total'] ?? count($posts)),
+            'total'       => $total,
             'page'        => $page,
-            'total_pages' => null,
-            'has_more'    => count($posts) > 0,
+            'total_pages' => $scheduled ? max(1, (int) ceil($total / $perPage)) : null,
+            'has_more'    => $scheduled ? ($page - 1) * $perPage + count($posts) < $total : count($posts) > 0,
             'pages'       => $fbPages,
             'state'       => $state,
         ]);
         return;
     }
 
+    // A date range: read every matching post, then filter, sort and slice here.
     // Push our filters down to Publer itself (account_ids[]/query/from+to are
     // all real, documented filter params) instead of fetching everything and
     // filtering client-side — a workspace can easily have several hundred
