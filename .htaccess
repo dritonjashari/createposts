@@ -1,25 +1,30 @@
-# CreatePosts: this repository folder is the web root (public_html, a
-# subdomain's folder, or a subfolder such as public_html/createposts).
-#   backend/...                  the PHP API and workers (own .htaccess files)
-#   assets/..., favicon.svg, ... built frontend files, from frontend/dist
-#   anything else                the React app (index.php)
-# Nothing else in the repository (.git, sources, READMEs, ...) is reachable:
-# it all falls through to the app.
+
+# CreatePosts - React SPA + PHP Backend
+# Compatible with Namecheap shared hosting (Apache)
 
 Options -Indexes
 
 <IfModule mod_rewrite.c>
-  RewriteEngine On
+    RewriteEngine On
 
-  # Already routed below (this runs again after each internal rewrite).
-  RewriteRule ^(frontend/dist/|index\.php$) - [L]
+    # 1. Allow PHP backend and cPanel system paths
+    RewriteRule ^(backend|\.well-known|cgi-bin)(/|$) - [L]
 
-  # The backend, and cPanel's own folders (SSL certificate checks), as-is.
-  RewriteRule ^(backend|\.well-known|cgi-bin)(/|$) - [L]
+    # 2. Prevent rewriting files already inside the React build
+    RewriteRule ^frontend/dist/ - [L]
 
-  # Built frontend files: assets/* and the top-level files from frontend/public.
-  RewriteRule ^(assets/.+|[^/]+\.[A-Za-z0-9]+)$ frontend/dist/$1 [L]
+    # 3. Serve React build assets (JS, CSS, images, fonts)
+    RewriteCond %{DOCUMENT_ROOT}/frontend/dist/$1 -f
+    RewriteRule ^(assets/.+|[^/]+\.[A-Za-z0-9]+)$ frontend/dist/$1 [L]
 
-  # Every other path is a client-side route (/dashboard, /tasks/12, ...).
-  RewriteRule ^ index.php [L]
+    # 4. Serve the React entry point
+    RewriteRule ^$ frontend/dist/index.html [L]
+
+    # 5. React Router fallback
+    # Fixes 404 errors on refresh for:
+    # /dashboard
+    # /settings
+    # /tasks/12
+    # /any/react/route
+    RewriteRule ^ frontend/dist/index.html [L]
 </IfModule>
